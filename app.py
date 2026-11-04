@@ -1,11 +1,13 @@
 import time
 import uuid
+from typing import Any
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from main import llm
+from agent import build_agent, extract_steps
 from observability import MonitoringHandler, log, metrics
 
 app = FastAPI(title="LangChain + OpenRouter")
@@ -87,17 +89,48 @@ async def chat(req: ChatRequest) -> ChatResponse:
     return ChatResponse(reply=str(result.content))
 
 
+class AgentRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000)
+    temperature: float = Field(default=0, ge=0, le=2)
+    model: str | None = Field(default=None, pattern=r"^[\w.\-]+/[\w.\-:]+$")
+
+
+class AgentResponse(BaseModel):
+    answer: str
+    steps: list[dict[str, Any]]
+
+
+@app.post("/agent", response_model=AgentResponse)
+async def run_agent(req: AgentRequest) -> AgentResponse:
+    agent = build_agent(req.model or llm.model_name, req.temperature)
+    try:
+        result = await agent.ainvoke(
+            {"messages": [("human", req.message)]},
+            config={
+                "callbacks": [MonitoringHandler()],
+                "run_name": "react-agent",
+                "tags": ["chapter-3"],
+                "recursion_limit": 12,
+            },
+        )
+    except Exception as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    steps, answer = extract_steps(result["messages"])
+    return AgentResponse(answer=answer, steps=steps)
+
+
 PAGE = """<!doctype html>
 <html><head><meta charset="utf-8"><title>LangChain Chat</title>
 <style>
 body{font-family:sans-serif;max-width:720px;margin:2rem auto;padding:0 1rem}
 #log{border:1px solid #ccc;border-radius:6px;padding:.5rem;height:380px;overflow:auto;white-space:pre-wrap}
-.u{color:#0645ad;margin:.4rem 0}.a{margin:.4rem 0}.e{color:#b00;margin:.4rem 0}
+.u{color:#0645ad;margin:.4rem 0}.a{margin:.4rem 0}.e{color:#b00;margin:.4rem 0}.s{color:#666;font-size:13px;margin:.2rem 0 .2rem 1rem}
 form{display:flex;gap:.5rem;margin-top:.5rem}input{flex:1;padding:.5rem}
 </style></head><body>
 <h2>LangChain + OpenRouter</h2>
 <input id="sys" style="width:100%;box-sizing:border-box" value="You are a helpful assistant.">
-<label>Model: <select id="model">__MODEL_OPTIONS__</select></label><br>
+<label>Model: <select id="model">__MODEL_OPTIONS__</select></label>
+<label><input type="checkbox" id="agent" style="flex:none"> Agent mode (ReAct: calculator, time, word count, web search, weather)</label><br>
 <label>Temperature: <span id="tv">0.7</span>
 <input id="temp" type="range" min="0" max="2" step="0.1" value="0.7" style="width:200px;padding:0;flex:none"
  oninput="tv.textContent=this.value"></label>
@@ -113,12 +146,19 @@ document.getElementById('f').onsubmit=async e=>{
   e.preventDefault();
   const m=document.getElementById('m');const text=m.value;m.value='';
   add('u','You: '+text);
-  const r=await fetch('/chat',{method:'POST',headers:{'Content-Type':'application/json'},
-    body:JSON.stringify({message:text,system_prompt:document.getElementById('sys').value,
-    temperature:parseFloat(document.getElementById('temp').value),
-    model:document.getElementById('model').value})});
+  const agentMode=document.getElementById('agent').checked;
+  const body={message:text,temperature:parseFloat(document.getElementById('temp').value),
+    model:document.getElementById('model').value};
+  if(!agentMode)body.system_prompt=document.getElementById('sys').value;
+  const r=await fetch(agentMode?'/agent':'/chat',{method:'POST',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify(body)});
   const j=await r.json();
-  r.ok?add('a','AI: '+j.reply):add('e','Error: '+JSON.stringify(j.detail));
+  if(!r.ok)add('e','Error: '+JSON.stringify(j.detail));
+  else if(agentMode){
+    j.steps.forEach(s=>add('s',s.type==='action'
+      ?'Action: '+s.tool+' '+JSON.stringify(s.input):'Observation: '+s.output));
+    add('a','AI: '+j.answer);
+  } else add('a','AI: '+j.reply);
   refreshStats();
 };
 async function refreshStats(){
