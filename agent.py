@@ -6,8 +6,9 @@ from typing import Any
 import httpx
 from ddgs import DDGS
 from langchain.agents import create_agent
-from langchain_core.messages import AIMessage, ToolMessage
+from langchain_core.messages import AIMessage, HumanMessage, ToolMessage
 from langchain_core.tools import tool
+from langgraph.checkpoint.memory import InMemorySaver
 
 from main import llm
 
@@ -100,6 +101,9 @@ def get_weather(city: str) -> str:
 
 TOOLS = [calculator, current_time, word_count, web_search, get_weather]
 
+# Shared so every per-request agent sees the same conversation threads.
+checkpointer = InMemorySaver()
+
 SYSTEM_PROMPT = (
     "You are a ReAct agent. Think about what is needed, call a tool when it helps, "
     "read the observation, and repeat until you can give a final answer. "
@@ -110,11 +114,41 @@ SYSTEM_PROMPT = (
 
 def build_agent(model: str, temperature: float):
     bound = llm.bind(model=model, temperature=temperature)
-    return create_agent(bound, tools=TOOLS, system_prompt=SYSTEM_PROMPT)
+    return create_agent(bound, tools=TOOLS, system_prompt=SYSTEM_PROMPT, checkpointer=checkpointer)
+
+
+def _agent_messages(thread_id: str) -> list[Any]:
+    tup = checkpointer.get_tuple({"configurable": {"thread_id": thread_id}})
+    return tup.checkpoint["channel_values"].get("messages", []) if tup else []
+
+
+def agent_memory(thread_id: str) -> list[dict[str, Any]]:
+    """What the checkpointer stored for a thread, in a display-friendly shape."""
+    rows: list[dict[str, Any]] = []
+    for m in _agent_messages(thread_id):
+        row: dict[str, Any] = {"role": m.type, "content": str(m.content)}
+        if isinstance(m, AIMessage) and m.tool_calls:
+            row["tool_calls"] = [{"name": c["name"], "args": c["args"]} for c in m.tool_calls]
+        if isinstance(m, ToolMessage):
+            row["tool"] = m.name
+        rows.append(row)
+    return rows
+
+
+def agent_threads() -> dict[str, int]:
+    """thread_id -> number of stored messages."""
+    ids = {t.config["configurable"]["thread_id"] for t in checkpointer.list(None)}
+    return {i: len(_agent_messages(i)) for i in ids}
+
+
+def forget_agent_thread(thread_id: str) -> None:
+    checkpointer.delete_thread(thread_id)
 
 
 def extract_steps(messages: list[Any]) -> tuple[list[dict[str, Any]], str]:
-    """Turn the message history into Thinking/Action/Observation steps and the answer."""
+    """Turn the latest turn's messages into Thinking/Action/Observation steps and the answer."""
+    last_human = max((i for i, m in enumerate(messages) if isinstance(m, HumanMessage)), default=0)
+    messages = messages[last_human:]
     steps: list[dict[str, Any]] = []
     answer = ""
     for msg in messages:

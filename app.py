@@ -7,7 +7,7 @@ from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
 
 from main import llm
-from agent import build_agent, extract_steps
+from agent import agent_memory, agent_threads, build_agent, extract_steps, forget_agent_thread
 from observability import MonitoringHandler, log, metrics
 
 app = FastAPI(title="LangChain + OpenRouter")
@@ -32,7 +32,7 @@ async def monitor(request: Request, call_next):
         metrics.record_request(error=True, rid=rid, method=request.method, path=request.url.path, status=500)
         raise
     ms = (time.perf_counter() - start) * 1000
-    if not request.url.path.startswith("/metrics"):
+    if not request.url.path.startswith(("/metrics", "/memory")):
         metrics.record_request(
             error=response.status_code >= 400, rid=rid, method=request.method,
             path=request.url.path, status=response.status_code, ms=round(ms),
@@ -65,18 +65,46 @@ class ChatRequest(BaseModel):
     system_prompt: str = "You are a helpful assistant."
     temperature: float = Field(default=0.7, ge=0, le=2)
     model: str | None = Field(default=None, pattern=r"^[\w.\-]+/[\w.\-:]+$")
+    thread_id: str | None = Field(default=None, pattern=r"^[\w\-]{1,64}$")
 
 
 class ChatResponse(BaseModel):
     reply: str
 
 
+MAX_HISTORY = 20  # messages kept per chat thread
+chat_history: dict[str, list[tuple[str, str]]] = {}
+
+
+@app.get("/memory")
+async def list_memory() -> dict[str, dict[str, int]]:
+    return {
+        "agent_threads": agent_threads(),
+        "chat_threads": {k: len(v) for k, v in chat_history.items()},
+    }
+
+
+@app.get("/memory/{thread_id}")
+async def get_memory(thread_id: str) -> list[dict[str, Any]]:
+    if thread_id.startswith("chat-"):
+        return [{"role": r, "content": c} for r, c in chat_history.get(thread_id, [])]
+    return agent_memory(thread_id)
+
+
+@app.delete("/memory/{thread_id}")
+async def clear_memory(thread_id: str) -> dict[str, str]:
+    chat_history.pop(thread_id, None)
+    forget_agent_thread(thread_id)
+    return {"status": "cleared"}
+
+
 @app.post("/chat", response_model=ChatResponse)
 async def chat(req: ChatRequest) -> ChatResponse:
+    history = chat_history.get(req.thread_id, []) if req.thread_id else []
     try:
         bound = llm.bind(temperature=req.temperature, model=req.model or llm.model_name)
         result = await bound.ainvoke(
-            [("system", req.system_prompt), ("human", req.message)],
+            [("system", req.system_prompt), *history, ("human", req.message)],
             config={
                 "callbacks": [MonitoringHandler()],
                 "run_name": "chat",
@@ -86,13 +114,18 @@ async def chat(req: ChatRequest) -> ChatResponse:
         )
     except Exception as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
-    return ChatResponse(reply=str(result.content))
+    reply = str(result.content)
+    if req.thread_id:
+        history = [*history, ("human", req.message), ("ai", reply)]
+        chat_history[req.thread_id] = history[-MAX_HISTORY:]
+    return ChatResponse(reply=reply)
 
 
 class AgentRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000)
     temperature: float = Field(default=0, ge=0, le=2)
     model: str | None = Field(default=None, pattern=r"^[\w.\-]+/[\w.\-:]+$")
+    thread_id: str | None = Field(default=None, pattern=r"^[\w\-]{1,64}$")
 
 
 class AgentResponse(BaseModel):
@@ -103,14 +136,17 @@ class AgentResponse(BaseModel):
 @app.post("/agent", response_model=AgentResponse)
 async def run_agent(req: AgentRequest) -> AgentResponse:
     agent = build_agent(req.model or llm.model_name, req.temperature)
+    thread_id = req.thread_id or uuid.uuid4().hex
     try:
         result = await agent.ainvoke(
             {"messages": [("human", req.message)]},
             config={
                 "callbacks": [MonitoringHandler()],
                 "run_name": "react-agent",
-                "tags": ["chapter-3"],
+                "tags": ["chapter-3", "chapter-4"],
                 "recursion_limit": 12,
+                "configurable": {"thread_id": thread_id},
+                "metadata": {"thread_id": thread_id},
             },
         )
     except Exception as exc:
@@ -135,12 +171,38 @@ form{display:flex;gap:.5rem;margin-top:.5rem}input{flex:1;padding:.5rem}
 <input id="temp" type="range" min="0" max="2" step="0.1" value="0.7" style="width:200px;padding:0;flex:none"
  oninput="tv.textContent=this.value"></label>
 <div id="log"></div>
+<div style="margin-top:.3rem"><button type="button" id="newchat">New chat</button>
+<button type="button" id="showmem">Memory</button>
+<button type="button" id="clearmem">Clear memory</button>
+<small>This tab remembers the conversation until you click New chat.</small></div>
+<div id="memory" style="overflow:auto;font-size:12px"></div>
 <div id="stats" style="display:flex;flex-wrap:wrap;gap:.4rem;margin-top:.5rem"></div>
 <div id="detail" style="overflow:auto;font-size:12px"></div>
 <form id="f"><input id="m" placeholder="Type a message..." autocomplete="off" required>
 <button>Send</button></form>
 <script>
 const log=document.getElementById('log');
+let threadId=Math.random().toString(36).slice(2)+Date.now().toString(36);
+document.getElementById('newchat').onclick=()=>{
+  threadId=Math.random().toString(36).slice(2)+Date.now().toString(36);log.replaceChildren();
+  if(memOpen)showMemory();
+};
+let memOpen=false;
+const tid=()=>(document.getElementById('agent').checked?'agent-':'chat-')+threadId;
+async function showMemory(){
+  memOpen=true;
+  const box=document.getElementById('memory');
+  const rows=await (await fetch('/memory/'+tid())).json();
+  const t=document.createElement('table');t.style.borderCollapse='collapse';
+  const row=(vals,tag)=>{const tr=t.insertRow();vals.forEach(v=>{const c=document.createElement(tag);c.textContent=v??'';c.style.cssText='border:1px solid #ccc;padding:2px 6px;text-align:left;vertical-align:top';tr.append(c)})};
+  row(['#','role','content','tool calls'],'th');
+  rows.forEach((x,i)=>row([i+1,x.role+(x.tool?' ('+x.tool+')':''),x.content,x.tool_calls?JSON.stringify(x.tool_calls):''],'td'));
+  box.replaceChildren(document.createTextNode('Memory for thread '+tid()+': '+rows.length+' messages'),t);
+}
+document.getElementById('showmem').onclick=showMemory;
+document.getElementById('clearmem').onclick=async()=>{
+  await fetch('/memory/'+tid(),{method:'DELETE'});log.replaceChildren();if(memOpen)showMemory();
+};
 function add(c,t){const d=document.createElement('div');d.className=c;d.textContent=t;log.append(d);log.scrollTop=log.scrollHeight}
 document.getElementById('f').onsubmit=async e=>{
   e.preventDefault();
@@ -148,7 +210,7 @@ document.getElementById('f').onsubmit=async e=>{
   add('u','You: '+text);
   const agentMode=document.getElementById('agent').checked;
   const body={message:text,temperature:parseFloat(document.getElementById('temp').value),
-    model:document.getElementById('model').value};
+    model:document.getElementById('model').value,thread_id:(agentMode?'agent-':'chat-')+threadId};
   if(!agentMode)body.system_prompt=document.getElementById('sys').value;
   const r=await fetch(agentMode?'/agent':'/chat',{method:'POST',headers:{'Content-Type':'application/json'},
     body:JSON.stringify(body)});
@@ -160,6 +222,7 @@ document.getElementById('f').onsubmit=async e=>{
     add('a','AI: '+j.answer);
   } else add('a','AI: '+j.reply);
   refreshStats();
+  if(memOpen)showMemory();
 };
 async function refreshStats(){
   const s=await (await fetch('/metrics')).json();
