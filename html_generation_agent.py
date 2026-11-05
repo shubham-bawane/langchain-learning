@@ -227,6 +227,9 @@ def _get_llm(provider: Optional[str] = None) -> ChatOpenAI:
         provider: Optional LLM provider ("openai", "openrouter", "anthropic")
     """
     return LLMConfig.get_llm(provider)
+
+
+def _extract_text(content: Any) -> str:
     """Extract string content from various message formats."""
     if isinstance(content, str):
         return content
@@ -734,7 +737,7 @@ def build_graph():
 # ============================================================================
 
 def run_html_generation_workflow(
-    user_prompt: str,
+    user_prompt,
     llm_provider: Optional[str] = None,
     use_database: bool = True,
 ):
@@ -742,14 +745,25 @@ def run_html_generation_workflow(
     Execute the HTML generation workflow with human-in-the-loop support.
     
     Args:
-        user_prompt: The user's initial request for the HTML page
+        user_prompt: Either a string (initial request) or AgentState dict
         llm_provider: Optional LLM provider ("openai", "openrouter", "anthropic")
         use_database: Whether to store metadata in Qdrant if configured
+    
+    Returns:
+        Completed AgentState
     """
+    # Handle both string and dict inputs
+    if isinstance(user_prompt, dict):
+        initial_state = user_prompt
+        prompt_text = initial_state.get("user_prompt", "")
+    else:
+        prompt_text = user_prompt
+        initial_state = None
+    
     print("\n" + "=" * 80)
     print("🚀 MULTI-AGENT HTML GENERATION SYSTEM")
     print("=" * 80)
-    print(f"User Prompt: {user_prompt}\n")
+    print(f"User Prompt: {prompt_text}\n")
 
     # Determine LLM provider
     if llm_provider is None:
@@ -764,20 +778,26 @@ def run_html_generation_workflow(
     # Generate session ID
     session_id = f"session_{int(datetime.now().timestamp() * 1000)}"
 
-    # Initialize state
-    initial_state: AgentState = {
-        "user_prompt": user_prompt,
-        "manager_clarifications": [],
-        "final_specifications": "",
-        "ux_blueprint": "",
-        "design_system": "",
-        "framework_choice": "Tailwind",
-        "html_content": "",
-        "validation_errors": [],
-        "retry_count": 0,
-        "llm_provider": llm_provider,
-        "session_id": session_id,
-    }
+    # Initialize or use provided state
+    if initial_state is None:
+        initial_state: AgentState = {
+            "user_prompt": prompt_text,
+            "manager_clarifications": [],
+            "final_specifications": "",
+            "ux_blueprint": "",
+            "design_system": "",
+            "framework_choice": "Tailwind",
+            "html_content": "",
+            "validation_errors": [],
+            "retry_count": 0,
+            "llm_provider": llm_provider,
+            "session_id": session_id,
+        }
+    else:
+        # Update provider in existing state
+        initial_state["llm_provider"] = llm_provider
+        if not initial_state.get("session_id"):
+            initial_state["session_id"] = session_id
 
     # Compile graph
     compiled_graph = build_graph()
@@ -799,48 +819,52 @@ def run_html_generation_workflow(
                         if key != "__end__":
                             initial_state = value
 
-            except Interrupt as interrupt:
+            except BaseException as e:
                 # Handle interrupt for clarifying questions
-                print(f"\n{interrupt.value}\n")
+                if isinstance(e, Interrupt):
+                    print(f"\n{e.value}\n")
 
-                # Collect user answers
-                questions = [
-                    c["question"] for c in initial_state["manager_clarifications"]
-                ]
+                    # Collect user answers
+                    questions = [
+                        c["question"] for c in initial_state["manager_clarifications"]
+                    ]
 
-                answers = []
-                for i, question in enumerate(questions, 1):
-                    answer = input(f"\nAnswer {i}: ").strip()
-                    if not answer:
-                        answer = "No specific preference"
-                    answers.append(answer)
-                    initial_state["manager_clarifications"][i - 1]["answer"] = answer
+                    answers = []
+                    for i, question in enumerate(questions, 1):
+                        answer = input(f"\nAnswer {i}: ").strip()
+                        if not answer:
+                            answer = "No specific preference"
+                        answers.append(answer)
+                        initial_state["manager_clarifications"][i - 1]["answer"] = answer
 
-                # Build final specifications from answers
-                spec_builder = f"""Based on the clarifying questions and answers:
+                    # Build final specifications from answers
+                    spec_builder = f"""Based on the clarifying questions and answers:
 
 Questions & Answers:
 """
-                for q, a in zip(questions, answers):
-                    spec_builder += f"\nQ: {q}\nA: {a}\n"
+                    for q, a in zip(questions, answers):
+                        spec_builder += f"\nQ: {q}\nA: {a}\n"
 
-                spec_builder += f"""
+                    spec_builder += f"""
 
 Original user request: {initial_state['user_prompt']}
 
 Create detailed final specifications for the HTML page that incorporate all these answers.
 """
 
-                llm = _get_llm(llm_provider)
-                prompt = ChatPromptTemplate.from_template(spec_builder)
-                chain = prompt | llm
-                result = chain.invoke({})
-                initial_state["final_specifications"] = _extract_text(result)
+                    llm = _get_llm(llm_provider)
+                    prompt = ChatPromptTemplate.from_template(spec_builder)
+                    chain = prompt | llm
+                    result = chain.invoke({})
+                    initial_state["final_specifications"] = _extract_text(result)
 
-                print("\n✓ Specifications updated. Resuming workflow...\n")
+                    print("\n✓ Specifications updated. Resuming workflow...\n")
 
-                # Resume from next node
-                continue
+                    # Resume from next node
+                    continue
+                else:
+                    # Re-raise if it's not an Interrupt
+                    raise
 
             # If we get here without interrupt, workflow completed
             break
@@ -853,8 +877,10 @@ Create detailed final specifications for the HTML page that incorporate all thes
     print("✅ WORKFLOW COMPLETED SUCCESSFULLY")
     print("=" * 80)
     print(f"Generated HTML file: output.html")
-    print(f"Session ID: {session_id}")
+    print(f"Session ID: {initial_state.get('session_id')}")
     print(f"LLM Provider: {LLMConfig.PROVIDERS.get(llm_provider, llm_provider)}")
+    
+    return initial_state
 
 
 # ============================================================================

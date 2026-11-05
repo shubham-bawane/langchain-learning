@@ -82,18 +82,24 @@ class ChatApp {
         input.value = '';
 
         // Show loading state
-        this.showLoading('Processing your request...');
+        this.showLoading('Processing your request... (This may take 30-60 seconds)');
 
         try {
-            // Send message to backend
+            // Send message to backend with longer timeout
+            const controller = new AbortController();
+            const timeout = setTimeout(() => controller.abort(), 120000); // 2 minute timeout
+            
             const response = await fetch(`${this.apiBase}/chat/message`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                     session_id: this.sessionId,
                     message: message
-                })
+                }),
+                signal: controller.signal
             });
+
+            clearTimeout(timeout);
 
             const data = await response.json();
 
