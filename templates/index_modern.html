@@ -1,0 +1,198 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Website Generator AI</title>
+    <link rel="stylesheet" href="/static/style_modern.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <!-- Animated Background -->
+    <div class="animated-bg">
+        <div class="bg-blob blob-1"></div>
+        <div class="bg-blob blob-2"></div>
+        <div class="bg-blob blob-3"></div>
+    </div>
+
+    <div class="app-wrapper">
+        <!-- Header -->
+        <header class="header">
+            <div class="header-container">
+                <div class="logo-section">
+                    <div class="logo-icon">
+                        <i class="fas fa-sparkles"></i>
+                    </div>
+                    <div class="logo-text">
+                        <h1>Website Generator</h1>
+                        <p>Powered by AI</p>
+                    </div>
+                </div>
+                <div class="header-status">
+                    <div class="status-badge">
+                        <span class="status-dot"></span>
+                        <span id="status-text">Ready to generate</span>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <main class="main-content">
+            <!-- Left Panel -->
+            <section class="left-panel">
+                <div class="chat-wrapper">
+                    <!-- Chat History -->
+                    <div class="chat-history" id="chat-history">
+                        <div class="chat-message bot-message">
+                            <div class="message-avatar">
+                                <i class="fas fa-robot"></i>
+                            </div>
+                            <div class="message-bubble">
+                                <p>🎨 Hey there! I'm your AI website designer. Tell me what amazing website you'd like to create!</p>
+                                <span class="message-time">just now</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Progress Indicator -->
+                    <div class="progress-container" id="progress-container" style="display: none;">
+                        <div class="progress-title">✨ Generating your website...</div>
+                        <div class="progress-steps">
+                            <div class="progress-step" id="step-requirements">
+                                <div class="step-circle">
+                                    <i class="fas fa-clipboard"></i>
+                                </div>
+                                <span>Requirements</span>
+                            </div>
+                            <div class="progress-connector"></div>
+                            <div class="progress-step" id="step-ux">
+                                <div class="step-circle">
+                                    <i class="fas fa-pencil-ruler"></i>
+                                </div>
+                                <span>Design</span>
+                            </div>
+                            <div class="progress-connector"></div>
+                            <div class="progress-step" id="step-design">
+                                <div class="step-circle">
+                                    <i class="fas fa-palette"></i>
+                                </div>
+                                <span>Style</span>
+                            </div>
+                            <div class="progress-connector"></div>
+                            <div class="progress-step" id="step-html">
+                                <div class="step-circle">
+                                    <i class="fas fa-code"></i>
+                                </div>
+                                <span>Code</span>
+                            </div>
+                            <div class="progress-connector"></div>
+                            <div class="progress-step" id="step-validate">
+                                <div class="step-circle">
+                                    <i class="fas fa-check"></i>
+                                </div>
+                                <span>Done</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Chat Input -->
+                <div class="chat-input-section">
+                    <form class="chat-form" id="chat-form">
+                        <div class="input-wrapper">
+                            <input 
+                                type="text" 
+                                id="message-input" 
+                                class="message-input" 
+                                placeholder="Describe your website idea... e.g., 'A portfolio for a digital artist'"
+                                autocomplete="off"
+                            >
+                            <div class="input-actions">
+                                <button type="submit" class="btn-icon send-btn" title="Send">
+                                    <i class="fas fa-paper-plane"></i>
+                                </button>
+                                <button type="button" class="btn-icon clear-btn" id="clear-btn" title="Clear chat">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </div>
+                        </div>
+                        <small class="input-hint">💡 Press Enter to send, Shift+Enter for new line</small>
+                    </form>
+                </div>
+            </section>
+
+            <!-- Right Panel -->
+            <section class="right-panel">
+                <!-- Preview Header -->
+                <div class="preview-header">
+                    <h2>Live Preview</h2>
+                    <div class="preview-actions">
+                        <button id="refresh-btn" class="btn-secondary" title="Refresh preview">
+                            <i class="fas fa-sync-alt"></i>
+                            Refresh
+                        </button>
+                        <button id="open-tab-btn" class="btn-secondary" title="Open in new tab" style="display: none;">
+                            <i class="fas fa-external-link-alt"></i>
+                            Open
+                        </button>
+                        <button id="download-btn" class="btn-primary" title="Download HTML" style="display: none;">
+                            <i class="fas fa-download"></i>
+                            Download
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Preview Area -->
+                <div class="preview-area">
+                    <div class="preview-placeholder" id="preview-placeholder">
+                        <div class="placeholder-icon">
+                            <i class="fas fa-layout"></i>
+                        </div>
+                        <h3>Website preview</h3>
+                        <p>Start chatting to generate your beautiful website</p>
+                    </div>
+                    <iframe 
+                        id="preview-iframe" 
+                        class="preview-iframe" 
+                        title="Website Preview"
+                        style="display: none;"
+                    ></iframe>
+                </div>
+
+                <!-- Info Stats -->
+                <div class="info-stats" id="info-stats" style="display: none;">
+                    <div class="stat-item">
+                        <span class="stat-label">Framework</span>
+                        <span class="stat-value" id="framework-display">Tailwind CSS</span>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat-item">
+                        <span class="stat-label">Status</span>
+                        <span class="stat-value" id="validation-status">Ready</span>
+                    </div>
+                    <div class="stat-divider"></div>
+                    <div class="stat-item">
+                        <span class="stat-label">Size</span>
+                        <span class="stat-value" id="size-display">-</span>
+                    </div>
+                </div>
+            </section>
+        </main>
+    </div>
+
+    <!-- Loading Modal -->
+    <div class="modal-overlay" id="loading-modal" style="display: none;">
+        <div class="modal">
+            <div class="loader">
+                <div class="loader-dot"></div>
+                <div class="loader-dot"></div>
+                <div class="loader-dot"></div>
+            </div>
+            <p id="loading-text">Generating your website...</p>
+        </div>
+    </div>
+
+    <script src="/static/app_modern.js"></script>
+</body>
+</html>
