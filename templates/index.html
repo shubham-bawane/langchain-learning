@@ -1,0 +1,163 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HTML Generation AI System</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <!-- Header -->
+        <header class="app-header">
+            <div class="header-content">
+                <div class="logo">
+                    <i class="fas fa-code"></i>
+                    <h1>Website Generator AI</h1>
+                </div>
+                <div class="header-info">
+                    <span id="status-indicator" class="status-indicator">●</span>
+                    <span id="status-text">Ready</span>
+                </div>
+            </div>
+        </header>
+
+        <!-- Main Content -->
+        <div class="main-content">
+            <!-- Left Panel - Chat Interface -->
+            <div class="left-panel">
+                <div class="chat-container">
+                    <!-- Chat History -->
+                    <div id="chat-history" class="chat-history">
+                        <div class="chat-message bot-message">
+                            <div class="message-content">
+                                <p>👋 Hi! I'm your AI website designer. Tell me what website you'd like to create!</p>
+                                <small class="message-time">Just now</small>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Progress Indicators -->
+                    <div id="progress-section" class="progress-section" style="display: none;">
+                        <div class="progress-title">Generation Progress</div>
+                        <div class="progress-steps">
+                            <div class="progress-step" id="step-requirements">
+                                <span class="step-icon">○</span>
+                                <span class="step-label">Requirements</span>
+                            </div>
+                            <div class="progress-step" id="step-ux">
+                                <span class="step-icon">○</span>
+                                <span class="step-label">UX Design</span>
+                            </div>
+                            <div class="progress-step" id="step-design">
+                                <span class="step-icon">○</span>
+                                <span class="step-label">Aesthetics</span>
+                            </div>
+                            <div class="progress-step" id="step-html">
+                                <span class="step-icon">○</span>
+                                <span class="step-label">HTML Code</span>
+                            </div>
+                            <div class="progress-step" id="step-validate">
+                                <span class="step-icon">○</span>
+                                <span class="step-label">Validation</span>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Error Display -->
+                    <div id="error-section" class="error-section" style="display: none;">
+                        <div class="error-title">⚠ Issues Found</div>
+                        <ul id="error-list" class="error-list"></ul>
+                    </div>
+                </div>
+
+                <!-- Chat Input -->
+                <div class="chat-input-area">
+                    <form id="chat-form" class="chat-form">
+                        <input 
+                            type="text" 
+                            id="message-input" 
+                            class="message-input" 
+                            placeholder="Describe your website idea... (e.g., 'A portfolio site for a developer')"
+                            autocomplete="off"
+                        >
+                        <button type="submit" id="send-btn" class="send-btn" title="Send message">
+                            <i class="fas fa-paper-plane"></i>
+                        </button>
+                        <button type="button" id="clear-btn" class="clear-btn" title="Clear chat">
+                            <i class="fas fa-trash"></i>
+                        </button>
+                    </form>
+                    <div class="input-hint">Press Enter to send or Shift+Enter for new line</div>
+                </div>
+            </div>
+
+            <!-- Right Panel - Preview -->
+            <div class="right-panel">
+                <!-- Preview Controls -->
+                <div class="preview-controls">
+                    <div class="control-title">Live Preview</div>
+                    <div class="control-buttons">
+                        <button id="open-tab-btn" class="control-btn" title="Open in new tab" style="display: none;">
+                            <i class="fas fa-external-link-alt"></i>
+                            <span>Open in Tab</span>
+                        </button>
+                        <button id="download-btn" class="control-btn" title="Download HTML file" style="display: none;">
+                            <i class="fas fa-download"></i>
+                            <span>Download</span>
+                        </button>
+                        <button id="refresh-btn" class="control-btn" title="Refresh preview">
+                            <i class="fas fa-sync-alt"></i>
+                            <span>Refresh</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Preview Iframe -->
+                <div class="preview-container">
+                    <div id="preview-placeholder" class="preview-placeholder">
+                        <div class="placeholder-content">
+                            <i class="fas fa-window-maximize"></i>
+                            <p>Website preview will appear here</p>
+                            <small>Start chatting to generate your website</small>
+                        </div>
+                    </div>
+                    <iframe 
+                        id="preview-iframe" 
+                        class="preview-iframe" 
+                        title="Website Preview"
+                        style="display: none;"
+                    ></iframe>
+                </div>
+
+                <!-- Info Panel -->
+                <div class="info-panel" id="info-panel" style="display: none;">
+                    <div class="info-item">
+                        <span class="info-label">Framework:</span>
+                        <span id="framework-display" class="info-value">Tailwind CSS</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Status:</span>
+                        <span id="validation-status" class="info-value">Pending</span>
+                    </div>
+                    <div class="info-item">
+                        <span class="info-label">Size:</span>
+                        <span id="size-display" class="info-value">-</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Modal -->
+    <div id="loading-modal" class="modal" style="display: none;">
+        <div class="modal-content">
+            <div class="spinner"></div>
+            <p id="loading-text">Generating your website...</p>
+        </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>

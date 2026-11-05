@@ -1,0 +1,7 @@
+# UI Requirements
+# Add these to your existing requirements or install with:
+# pip install -r ui_requirements.txt
+
+flask==3.0.0
+flask-cors==4.0.0
+werkzeug==3.0.0
